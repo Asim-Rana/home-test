@@ -1,0 +1,77 @@
+var cheerio = require('cheerio');
+var express = require('express');
+var request = require('request');
+var rsvp = require('rsvp');
+
+var app = express();
+var port = process.env.PORT || 3000;
+var router = express.Router();
+
+
+router.get('/I/want/title', function(req, res) {
+    var queryStringParams = req.query;
+    if(queryStringParams.address) {
+
+        var addresses = queryStringParams.address;
+
+        if ( !Array.isArray(addresses) ) {
+            addresses = [addresses];
+        }
+        var htmlResponse = '<html><head></head><body><h1> Following are the titles of given websites: </h1><ul>';
+
+        var promises = addresses.map(function(address){
+
+            return new rsvp.Promise(function(fulfill, reject){
+                var addressFromQueryString = address;
+
+                if ( !address.startsWith('https://') && !address.startsWith('http://') ) {
+                    address = 'http://' + address;
+                }
+
+                request(address, function (error, response, body) {
+                    if(!error){
+                        var result = {
+                            address: addressFromQueryString,
+                            htmlDocument: body
+                        };
+                        fulfill(result);
+                    } else {
+                        reject(addressFromQueryString);
+                    }
+                });
+            });
+
+
+
+        });
+
+        var promisesResolved = 0;
+        promises.map(function(p){
+            p.then(function(data) {
+
+                $ = cheerio.load(data.htmlDocument);
+                htmlResponse = htmlResponse + '<li> ' + data.address + ' - "' + $('title').text() + '" </li>';
+            })
+                .catch(function(data){
+                    htmlResponse = htmlResponse + '<li> ' + data + ' - NO RESPONSE </li>';
+                })
+                .finally(function(){
+                    promisesResolved += 1;
+                    if (promisesResolved == promises.length) {
+                        htmlResponse = htmlResponse + '</ul></body></html>';
+                        res.end(htmlResponse);
+                    }
+                });
+        });
+
+    } else {
+        res.json('no address passed in query string "address"');
+    }
+});
+
+app.use('/api', router);
+
+app.listen(port);
+
+console.log('Server is running on: ' + port);
+
